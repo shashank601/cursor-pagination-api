@@ -15,6 +15,16 @@ This project is a backend system that enables efficient browsing of products wit
 
 ## Architecture
 
+### Product Main View
+<table style="margin: auto;">
+  <tr>
+    <td><img width="700"  alt="Screenshot 2026-06-22 235848" src="https://github.com/user-attachments/assets/424aba24-e2a3-4d9c-ad8c-a50728ed106f" /></td>
+    <td><img width="700"  alt="Screenshot 2026-06-23 000019" src="https://github.com/user-attachments/assets/a41ae47b-be49-4c16-a7e6-b2e7319ea3ce" /></td>
+  </tr>
+</table>
+
+
+
 ### Database Schema
 
 ```sql
