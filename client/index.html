@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Pagination</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { margin-bottom: 20px; }
+    .filters { 
+      background: white; 
+      padding: 15px; 
+      border-radius: 8px; 
+      margin-bottom: 20px;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 5px; }
+    .filter-group label { font-weight: bold; font-size: 14px; }
+    .category-buttons { display: flex; gap: 5px; flex-wrap: wrap; }
+    .category-btn {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      background: white;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .category-btn.active { background: #007bff; color: white; border-color: #007bff; }
+    .price-inputs { display: flex; gap: 10px; align-items: center; }
+    .price-inputs input { 
+      width: 80px; 
+      padding: 6px; 
+      border: 1px solid #ddd; 
+      border-radius: 4px; 
+    }
+    .apply-btn { padding: 6px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 18px; }
+    .apply-btn:hover { background: #218838; }
+    .reset-btn { padding: 6px 15px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 18px; }
+    .reset-btn:hover { background: #c82333; }
+    .pagination-info {
+      background: white;
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+    }
+    .products-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+    .products-table th, .products-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    .products-table th { background: #f8f9fa; font-weight: bold; }
+    .products-table tr:hover { background: #f5f5f5; }
+    .pagination-controls { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
+    .pagination-controls button { padding: 8px 16px; border: 1px solid #ddd; background: white; cursor: pointer; border-radius: 4px; }
+    .pagination-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .pagination-controls button:hover:not(:disabled) { background: #f0f0f0; }
+    .loading { text-align: center; padding: 20px; font-weight: bold; }
+    .error { color: red; text-align: center; padding: 20px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Product Catalog</h1>
+    
+    <div class="filters">
+      <div class="filter-group">
+        <label>Categories:</label>
+        <div class="category-buttons" id="categoryButtons"></div>
+      </div>
+      
+      <div class="filter-group">
+        <label>Price Range:</label>
+        <div class="price-inputs">
+          <input type="number" id="minPrice" placeholder="Min" min="0">
+          <span>to</span>
+          <input type="number" id="maxPrice" placeholder="Max" min="0">
+        </div>
+      </div>
+      
+      <button class="apply-btn" onclick="applyFilters()">Apply Filters</button>
+      <button class="reset-btn" onclick="resetFilters()">Reset</button>
+    </div>
+    
+    <div class="pagination-info">
+      <span id="pageInfo">Page 1</span>
+      <span id="totalInfo">0 products</span>
+    </div>
+    
+    <table class="products-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Category</th>
+          <th>Price</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody id="productsBody"></tbody>
+    </table>
+    
+    <div class="pagination-controls">
+      <button id="prevBtn" onclick="prevPage()" disabled>← Previous</button>
+      <button id="nextBtn" onclick="nextPage()" disabled>Next →</button>
+    </div>
+    
+    <div id="loading" class="loading" style="display: none;">Loading items...</div>
+    <div id="error" class="error" style="display: none;"></div>
+  </div>
+
+  <script>
+    
+    const API_BASE = 'http://localhost:3000/api';
+const LIMIT = 50;
+const CATEGORIES = ['Beauty', 'Furniture', 'Electronics', 'Jewellery', 'Watches', 'Appliances', 'Baby', 'Computers'];
+
+let state = {
+  snapshot: null,
+  cursors: [null], 
+  page: 1,
+  selectedCategories: [],
+  nextCursor: null,
+  isLoading: false // NEW: Lock flag to stop spamming
+};
+
+function initCategories() {
+  const container = document.getElementById('categoryButtons');
+  CATEGORIES.forEach(cat => {
+    const btn = document.createElement('button');
+    btn.className = 'category-btn';
+    btn.textContent = cat;
+    btn.onclick = () => {
+      if (state.isLoading) return; // Lock filters during fetch
+      btn.classList.toggle('active');
+      const idx = state.selectedCategories.indexOf(cat);
+      idx > -1 ? state.selectedCategories.splice(idx, 1) : state.selectedCategories.push(cat);
+    };
+    container.appendChild(btn);
+  });
+}
+
+async function fetchProducts() {
+  if (state.isLoading) return; // FIX: Guard block drops spammed clicks
+  
+  const loading = document.getElementById('loading');
+  const error = document.getElementById('error');
+  
+  state.isLoading = true;
+  loading.style.display = 'block';
+  error.style.display = 'none';
+  updateButtonStates(); // Instantly disable buttons visually
+  
+  try {
+    const params = new URLSearchParams({
+      limit: LIMIT,
+      category: state.selectedCategories.join(','),
+      minPrice: document.getElementById('minPrice').value,
+      maxPrice: document.getElementById('maxPrice').value
+    });
+    
+    if (state.snapshot) params.set('snapshot', state.snapshot);
+    
+    const activeCursor = state.cursors[state.page - 1];
+    if (activeCursor) params.set('cursor', JSON.stringify(activeCursor));
+    
+    for (const [key, value] of [...params.entries()]) {
+      if (!value) params.delete(key);
+    }
+    
+    const res = await fetch(`${API_BASE}/items?${params}`);
+    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+    
+    const json = await res.json();
+    
+    if (!state.snapshot && json.snapshot) state.snapshot = json.snapshot;
+    state.nextCursor = json.nextCursor;
+    
+    if (json.nextCursor) state.cursors[state.page] = json.nextCursor;
+    
+    renderProducts(json.data);
+  } catch (err) {
+    error.textContent = err.message;
+    error.style.display = 'block';
+  } finally {
+    state.isLoading = false;
+    loading.style.display = 'none';
+    updateButtonStates(); // Re-evaluate button states after data arrives
+  }
+}
+
+function renderProducts(products) {
+  const tbody = document.getElementById('productsBody');
+  
+  tbody.innerHTML = products.length 
+    ? products.map(p => `
+        <tr>
+          <td>${p.id}</td>
+          <td>${p.name}</td>
+          <td>${p.category}</td>
+          <td>$${p.price}</td>
+          <td>${p.created_at.split('.')[0].replace('T', ' ')}</td>
+        </tr>`
+      ).join('')
+    : '<tr><td colspan="5" style="text-align: center; padding: 20px;">No products found</td></tr>';
+    
+  document.getElementById('totalInfo').textContent = `${products.length} products on this page`;
+  document.getElementById('pageInfo').textContent = `Page ${state.page}`;
+}
+
+function updateButtonStates() {
+  // Buttons stay fully disabled as long as state.isLoading is true
+  document.getElementById('prevBtn').disabled = state.isLoading || state.page === 1;
+  document.getElementById('nextBtn').disabled = state.isLoading || !state.nextCursor;
+}
+
+function applyFilters() {
+  if (state.isLoading) return;
+  state.snapshot = null;
+  state.cursors = [null];
+  state.page = 1;
+  fetchProducts();
+}
+
+function resetFilters() {
+  if (state.isLoading) return;
+  state.selectedCategories = [];
+  document.getElementById('minPrice').value = '';
+  document.getElementById('maxPrice').value = '';
+  document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
+  applyFilters();
+}
+
+function nextPage() { 
+  if (state.nextCursor && !state.isLoading) { 
+    state.page++; 
+    fetchProducts(); 
+  } 
+}
+
+function prevPage() { 
+  if (state.page > 1 && !state.isLoading) { 
+    state.page--; 
+    fetchProducts(); 
+  } 
+}
+
+// Fire setup
+initCategories();
+fetchProducts();
+    
+    
+  </script>
+</body>
+</html>

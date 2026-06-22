@@ -1,0 +1,1 @@
+npx node-pg-migrate up --migrations-schema assignment__migrations --create-migrations-schema
